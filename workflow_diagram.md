@@ -21,12 +21,25 @@ graph TD
     B --> C[Orchestrator Agent - CodeAgent]
 
     C --> D[Quoting Agent]
-    C --> E[Inventory Agent]
-    C --> F[Ordering Agent]
+    D --> D1["parse_request<br/>Purpose: extract item names and quantities<br/>Helper: custom parser + normalize_item_name"]
+    D --> D2["get_historical_quotes<br/>Purpose: retrieve prior quote examples<br/>Helper: search_quote_history"]
+    D --> D3["price_quote<br/>Purpose: calculate subtotal, discount, total<br/>Helper: PAPER_PRICE_MAP + _bulk_discount_rate"]
 
-    D -->|parse_request, get_historical_quotes, price_quote| G[(munder_difflin.db)]
-    E -->|check_inventory, check_all_inventory, restock_item| G
-    F -->|check_cash, fulfill_order| G
+    C --> E[Inventory Agent]
+    E --> E1["check_inventory<br/>Purpose: check one item stock<br/>Helper: get_stock_level"]
+    E --> E2["check_all_inventory<br/>Purpose: list available stock<br/>Helper: get_all_inventory"]
+    E --> E3["restock_item<br/>Purpose: buy stock shortfall<br/>Helpers: get_cash_balance, create_transaction, get_supplier_delivery_date"]
+
+    C --> F[Ordering Agent]
+    F --> F1["check_cash<br/>Purpose: verify available cash<br/>Helper: get_cash_balance"]
+    F --> F2["fulfill_order<br/>Purpose: record sales and shortfall handling<br/>Helpers: get_stock_level, create_transaction, restock_item"]
+
+    D3 --> G[(munder_difflin.db)]
+    E1 --> G
+    E2 --> G
+    E3 --> G
+    F1 --> G
+    F2 --> G
 
     C --> H[Single text response]
     H --> I[results list]
@@ -37,24 +50,28 @@ graph TD
 
 ```mermaid
 sequenceDiagram
-    participant Loop as run_test_scenarios
+    participant Runner as run_test_scenarios
     participant Orch as Orchestrator
     participant Q as Quoting Agent
     participant Inv as Inventory Agent
     participant Ord as Ordering Agent
     participant DB as munder_difflin.db
 
-    Loop->>Orch: request_with_date
-    Orch->>Q: parse + price (as_of_date)
-    Q->>DB: search_quote_history / prices
-    Q-->>Orch: line_items + total + explanation (bulk discount)
-    Orch->>Inv: check stock for line_items (as_of_date)
-    Inv->>DB: get_stock_level / restock (stock_orders)
-    Inv-->>Orch: availability + restock/delivery info
-    Orch->>Ord: fulfill accepted items (as_of_date)
-    Ord->>DB: record sales / restock shortfall
-    Ord-->>Orch: sales recorded + confirmation
-    Orch-->>Loop: single text response (quote + availability + fulfillment)
+    Runner->>Orch: request_with_date
+    Orch->>Q: quote this request with as_of_date
+    Q->>Q: tool parse_request extract line_items
+    Q->>DB: tool get_historical_quotes calls search_quote_history
+    Q->>Q: tool price_quote uses PAPER_PRICE_MAP and bulk discount
+    Q-->>Orch: line_items plus total plus explanation
+    Orch->>Inv: check stock for line_items with as_of_date
+    Inv->>DB: tool check_inventory calls get_stock_level
+    Inv->>DB: tool restock_item calls get_cash_balance, create_transaction, get_supplier_delivery_date
+    Inv-->>Orch: availability plus restock and delivery info
+    Orch->>Ord: fulfill accepted items with as_of_date
+    Ord->>DB: tool check_cash calls get_cash_balance
+    Ord->>DB: tool fulfill_order calls get_stock_level and create_transaction
+    Ord-->>Orch: sales recorded plus confirmation
+    Orch-->>Runner: single text response with quote, availability and fulfillment
 ```
 
 ## Bulk Discount Rule
