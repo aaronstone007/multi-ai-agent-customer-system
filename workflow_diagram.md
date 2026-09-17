@@ -33,6 +33,7 @@ graph TD
     C --> F[Ordering Agent]
     F --> F1["check_cash<br/>Purpose: verify available cash<br/>Helper: get_cash_balance"]
     F --> F2["fulfill_order<br/>Purpose: record sales and shortfall handling<br/>Helpers: get_stock_level, create_transaction, restock_item"]
+    F --> F3["financial_report_tool<br/>Purpose: inspect cash, inventory value, assets, top sellers<br/>Helper: generate_financial_report"]
 
     D3 --> G[(munder_difflin.db)]
     E1 --> G
@@ -40,6 +41,7 @@ graph TD
     E3 --> G
     F1 --> G
     F2 --> G
+    F3 --> G
 
     C --> H[Single text response]
     H --> I[results list]
@@ -70,6 +72,7 @@ sequenceDiagram
     Orch->>Ord: fulfill accepted items with as_of_date
     Ord->>DB: tool check_cash calls get_cash_balance
     Ord->>DB: tool fulfill_order calls get_stock_level and create_transaction
+    Ord->>DB: tool financial_report_tool calls generate_financial_report
     Ord-->>Orch: sales recorded plus confirmation
     Orch-->>Runner: single text response with quote, availability and fulfillment
 ```

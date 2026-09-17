@@ -887,8 +887,13 @@ def fulfill_order(line_items: str, as_of_date: str) -> str:
     transaction is recorded. If stock is short, a restock is attempted first
     (subject to affordability) and the delivery date is reported.
 
+    Pricing is always taken from the trusted `PAPER_PRICE_MAP` (the database unit
+    prices), never from any 'unit_price' the caller/LLM may pass, so recorded sales
+    cannot be skewed by model-invented prices.
+
     Args:
-        line_items: JSON list of objects with 'item_name', 'quantity', and 'unit_price'.
+        line_items: JSON list of objects with 'item_name' and 'quantity'. Any
+            'unit_price' field is ignored in favor of the trusted database price.
         as_of_date: ISO date (YYYY-MM-DD) of fulfillment.
     """
     items = _parse_line_items(line_items)
@@ -903,7 +908,8 @@ def fulfill_order(line_items: str, as_of_date: str) -> str:
             lines.append(f"Skipped unrecognized item '{entry.get('item_name')}'.")
             continue
 
-        unit_price = float(entry.get("unit_price", PAPER_PRICE_MAP[resolved]))
+        # Always use the trusted database price; ignore any LLM-supplied unit_price.
+        unit_price = PAPER_PRICE_MAP[resolved]
         stock_df = get_stock_level(resolved, as_of_date)
         stock = int(stock_df["current_stock"].iloc[0]) if not stock_df.empty else 0
 
@@ -926,6 +932,28 @@ def fulfill_order(line_items: str, as_of_date: str) -> str:
             lines.append(f"{resolved}: unable to fulfill immediately; awaiting restock.")
 
     return " ".join(lines)
+
+
+@tool
+def financial_report_tool(as_of_date: str) -> str:
+    """
+    Return a concise internal financial report for agent decision support.
+
+    Wraps the provided `generate_financial_report` helper and returns cash balance,
+    inventory value, total assets, and top-selling products as of the given date.
+
+    Args:
+        as_of_date: ISO date (YYYY-MM-DD) the report is generated for.
+    """
+    report = generate_financial_report(as_of_date)
+    summary = {
+        "as_of_date": report["as_of_date"],
+        "cash_balance": round(report["cash_balance"], 2),
+        "inventory_value": round(report["inventory_value"], 2),
+        "total_assets": round(report["total_assets"], 2),
+        "top_selling_products": report["top_selling_products"],
+    }
+    return json.dumps(summary, default=str)
 
 
 # ----------------------------------------------------------------------------
@@ -954,12 +982,13 @@ quoting_agent = ToolCallingAgent(
 )
 
 ordering_agent = ToolCallingAgent(
-    tools=[check_cash, fulfill_order],
+    tools=[check_cash, fulfill_order, financial_report_tool],
     model=model,
     name="ordering_agent",
     description=(
         "Finalizes accepted orders by recording sales, restocking shortfalls, and "
-        "confirming fulfillment with delivery dates. Always pass the request date."
+        "confirming fulfillment with delivery dates. Can inspect the internal financial "
+        "report for decision support. Always pass the request date."
     ),
     max_steps=6,
 )
@@ -994,6 +1023,33 @@ def call_your_multi_agent_system(request_with_date: str) -> str:
     task = ORCHESTRATOR_INSTRUCTIONS.format(request=request_with_date)
     result = orchestrator.run(task)
     return str(result)
+
+
+def safe_customer_error() -> str:
+    """A generic, customer-safe message used whenever the real output cannot be shown."""
+    return (
+        "We are sorry, but we could not complete this request right now. "
+        "Please contact sales support for a revised quote or try again later."
+    )
+
+
+def is_internal_error(text: str) -> bool:
+    """Return True if the text leaks internal errors or raw system output.
+
+    Guards against surfacing raw HTML error pages (e.g. 404s from the model proxy),
+    Python tracebacks, or smolagents generation errors to the customer.
+    """
+    if not isinstance(text, str):
+        return True
+    blocked = [
+        "<!DOCTYPE",
+        "<html>",
+        "Traceback",
+        "AgentGenerationError",
+        "404 Not Found",
+        "ERROR: unable to process",
+    ]
+    return any(token in text for token in blocked)
 
 
 # Run your test scenarios by writing them here. Make sure to keep track of them.
@@ -1053,11 +1109,17 @@ def run_test_scenarios():
         ############
         try:
             response = call_your_multi_agent_system(request_with_date)
+            # Audit EVERY row: if the model returned raw HTML / a traceback / an
+            # internal error string, replace it with a customer-safe message so no
+            # sensitive internal information leaks into customer-facing output.
+            if is_internal_error(response):
+                print(f"Sanitized internal error leak on request {idx + 1}.")
+                response = safe_customer_error()
         except Exception as e:
             # Never let one bad request crash the whole run; ensure `response`
-            # is always defined for printing and the results log.
+            # is always defined. Log the real error internally, return a safe one.
             print(f"ERROR processing request {idx + 1}: {e}")
-            response = f"ERROR: unable to process this request ({e})"
+            response = safe_customer_error()
 
         # Update state
         report = generate_financial_report(request_date)
