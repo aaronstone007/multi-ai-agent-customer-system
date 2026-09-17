@@ -6,6 +6,5 @@ __pycache__/
 # Secrets
 .env
 
-# Local database and generated outputs
+# Local database
 munder_difflin.db
-test_results.csv

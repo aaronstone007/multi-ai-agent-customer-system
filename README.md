@@ -14,6 +14,23 @@ The system uses a maximum of **5 agents** (this implementation uses 4) and proce
 
 ---
 
+## Run Output Results
+
+The latest end-to-end run of `run_test_scenarios()` processed all **20 requests** from
+`quote_requests_sample.csv`. Key artifacts produced by the run:
+
+- **`test_results.csv`** — per-request log (`request_id`, `request_date`, `cash_balance`,
+  `inventory_value`, `response`). In the latest run, cash changed on 5 requests (all recorded
+  sales), and **0 responses leaked internal errors** (no HTML, tracebacks, or 404 text).
+- **`run_output.log`** — full console transcript of the run: per-request context, agent
+  reasoning/tool calls, running cash and inventory, and the final financial report.
+- **`reflection_report.md`** — a short write-up of the architecture rationale, evaluation
+  results (with exact counts from `test_results.csv`), strengths, and future improvements.
+
+Latest run summary: final cash **$45,413.75**, final inventory value **$4,586.25**.
+
+---
+
 ## Architecture
 
 Four agents, well under the 5-agent limit:
@@ -44,10 +61,12 @@ project4/
 ├── quote_requests_sample.csv   # Simulated test cases used to evaluate the system
 ├── requirements.txt            # Python dependencies (includes smolagents)
 ├── workflow_diagram.md         # Agent architecture + data-flow diagrams (Mermaid)
+├── reflection_report.md        # Architecture rationale + evaluation results write-up
 ├── README.md                   # This file
 ├── .env                        # API key + config (create from template; gitignored)
 ├── .gitignore
-├── test_results.csv            # Generated after a run: per-request results log
+├── test_results.csv            # Run output: per-request results log
+├── run_output.log              # Run output: full console transcript of the latest run
 └── munder_difflin.db           # SQLite database, generated on run (gitignored)
 ```
 
@@ -118,6 +137,7 @@ Output includes:
 
 1. `project_starter.py` with the completed agent logic
 2. A **workflow diagram** describing the agent architecture and data flow (`workflow_diagram.md`)
-3. Outputs from your test run (`test_results.csv`)
+3. Outputs from your test run (`test_results.csv` and `run_output.log`)
+4. `reflection_report.md` with the design rationale and evaluation results
 
 ---
